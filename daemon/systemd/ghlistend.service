@@ -1,0 +1,14 @@
+[Unit]
+Description=GitHub Notification Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/ghlistend start
+Restart=on-failure
+RestartSec=10
+Environment=DISPLAY=:0
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus
+
+[Install]
+WantedBy=default.target
