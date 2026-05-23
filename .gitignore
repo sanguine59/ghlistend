@@ -1,0 +1,36 @@
+# Build artifacts
+/daemon/ghlistend
+/daemon/ghlistend-linux-*
+/daemon/ghlistend-darwin-*
+/daemon/dist/
+/dist/
+
+# Go test / coverage
+*.test
+*.out
+coverage.txt
+
+# Local runtime state (in case anyone runs the daemon from the repo)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Direnv / local env
+.envrc
+.env
+.env.local
+
+# local model preferences
+.claude
