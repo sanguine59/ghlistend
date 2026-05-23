@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/go-github/v88/github"
@@ -153,6 +154,40 @@ func (p *Poller) pollOnce(ctx context.Context, ifModSince string, firstRun bool)
 		if err := json.NewDecoder(resp.Body).Decode(&notifications); err != nil {
 			return nextInterval, newLastModified, status, 0, fmt.Errorf("decode body: %w", err)
 		}
+
+		for {
+			next := parseLinkNext(resp.Header.Get("Link"))
+			if next == "" {
+				break
+			}
+			resp.Body.Close()
+
+			nxtreq, err := http.NewRequestWithContext(ctx, http.MethodGet, next, nil)
+			if err != nil {
+				p.log.Warn("page: couldnt build request", "err", err)
+				break
+			}
+			nxtreq.Header.Set("Authorization", "Bearer "+p.opts.Token)
+
+			resp, err = p.http.Do(nxtreq)
+			if err != nil {
+				p.log.Warn("page: request failed", "err", err)
+				break
+			}
+			if resp.StatusCode != http.StatusOK {
+				p.log.Warn("page: status not expected", "status", resp.StatusCode)
+				resp.Body.Close()
+				break
+			}
+
+			var nextPage []*github.Notification
+			if err := json.NewDecoder(resp.Body).Decode(&nextPage); err != nil {
+				p.log.Warn("page: decode failed", "err", err)
+				break
+			}
+			notifications = append(notifications, nextPage...)
+		}
+
 		p.log.Debug("received notifications", "count", len(notifications))
 		if firstRun && !p.opts.NotifyExisting {
 			for _, n := range notifications {
@@ -221,6 +256,20 @@ func (p *Poller) sleep(ctx context.Context, d time.Duration) {
 	case <-ctx.Done():
 	case <-t.C:
 	}
+}
+
+func parseLinkNext(link string) string {
+	for _, part := range strings.Split(link, ",") {
+		part = strings.TrimSpace(part)
+		seg := strings.SplitN(part, ";", 2)
+		if len(seg) < 2 {
+			continue
+		}
+		if strings.TrimSpace(seg[1]) == `rel="next"` {
+			return strings.Trim(strings.TrimSpace(seg[0]), "<>")
+		}
+	}
+	return ""
 }
 
 func parsePollInterval(h string) time.Duration {
