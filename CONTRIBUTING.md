@@ -13,7 +13,7 @@ needs to incorporate your work.
 ## Where to discuss
 
 - **Issues, bugs, feature ideas:** use [GitHub Issues](https://github.com/sanguine59/ghlistend/issues).
-- **Known limitations and review findings:** see [`CODE_REVIEW.md`](./CODE_REVIEW.md) — the HIGH items are the highest-leverage things to pick up.
+- **Known limitations and review findings:** see [GitHub Issues](https://github.com/sanguine59/ghlistend/issues) — the HIGH items are the highest-leverage things to pick up.
 
 ## Development setup
 
