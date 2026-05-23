@@ -21,6 +21,7 @@ import (
 const (
 	defaultInterval = 60 * time.Second
 	maxBackoff      = 5 * time.Minute
+	maxPages        = 50
 )
 
 type Options struct {
@@ -137,7 +138,12 @@ func (p *Poller) pollOnce(ctx context.Context, ifModSince string, firstRun bool)
 	if err != nil {
 		return 0, "", 0, 0, err
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+	}()
 
 	status = resp.StatusCode
 	nextInterval = parsePollInterval(resp.Header.Get("X-Poll-Interval"))
@@ -155,24 +161,30 @@ func (p *Poller) pollOnce(ctx context.Context, ifModSince string, firstRun bool)
 			return nextInterval, newLastModified, status, 0, fmt.Errorf("decode body: %w", err)
 		}
 
-		for {
+		for page := 1; page < maxPages; page++ {
 			next := parseLinkNext(resp.Header.Get("Link"))
 			if next == "" {
 				break
 			}
 			resp.Body.Close()
-
+			resp = nil
 			nxtreq, err := http.NewRequestWithContext(ctx, http.MethodGet, next, nil)
 			if err != nil {
 				p.log.Warn("page: couldnt build request", "err", err)
 				break
 			}
-			nxtreq.Header.Set("Authorization", "Bearer "+p.opts.Token)
+			nxtreq.Header.Set("Authorization", req.Header.Get("Authorization"))
 
 			resp, err = p.http.Do(nxtreq)
 			if err != nil {
 				p.log.Warn("page: request failed", "err", err)
 				break
+			}
+			if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+				ra := parseRetryAfter(resp.Header.Get("Retry-After"))
+				resp.Body.Close()
+				resp = nil
+				return nextInterval, "", http.StatusTooManyRequests, ra, errRateLimited
 			}
 			if resp.StatusCode != http.StatusOK {
 				p.log.Warn("page: status not expected", "status", resp.StatusCode)
@@ -182,7 +194,9 @@ func (p *Poller) pollOnce(ctx context.Context, ifModSince string, firstRun bool)
 
 			var nextPage []*github.Notification
 			if err := json.NewDecoder(resp.Body).Decode(&nextPage); err != nil {
+				resp.Body.Close()
 				p.log.Warn("page: decode failed", "err", err)
+				resp = nil
 				break
 			}
 			notifications = append(notifications, nextPage...)
@@ -265,8 +279,11 @@ func parseLinkNext(link string) string {
 		if len(seg) < 2 {
 			continue
 		}
-		if strings.TrimSpace(seg[1]) == `rel="next"` {
-			return strings.Trim(strings.TrimSpace(seg[0]), "<>")
+		url := strings.Trim(strings.TrimSpace(seg[0]), "<>")
+		for _, attr := range strings.Split(seg[1], ";") {
+			if strings.TrimSpace(attr) == `rel="next"` {
+				return url
+			}
 		}
 	}
 	return ""
