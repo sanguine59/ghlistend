@@ -1,6 +1,6 @@
 # ghlistend
 
-A headless GitHub notifications daemon for Linux. Polls the GitHub
+A headless GitHub notifications daemon for Linux (coming soon for Windows & Mac). Polls the GitHub
 Notifications REST API and dispatches native toasts via D-Bus. No UI, no tray
 icon — just a background service you wire into systemd and forget about.
 
