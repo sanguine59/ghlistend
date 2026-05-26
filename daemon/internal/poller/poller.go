@@ -22,6 +22,7 @@ const (
 	defaultInterval = 60 * time.Second
 	maxBackoff      = 5 * time.Minute
 	maxPages        = 50
+	requestTimeout = 30 * time.Second
 )
 
 type Options struct {
@@ -131,7 +132,10 @@ var (
 )
 
 func (p *Poller) pollOnce(ctx context.Context, ifModSince string, firstRun bool) (nextInterval time.Duration, newLastModified string, status int, retryAfter time.Duration, err error) {
-	req, err := p.client.NewRequest(ctx, "GET", "notifications", nil)
+	reqCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+
+	req, err := p.client.NewRequest(reqCtx, "GET", "notifications", nil)
 	if err != nil {
 		return 0, "", 0, 0, fmt.Errorf("build request: %w", err)
 	}
@@ -173,8 +177,10 @@ func (p *Poller) pollOnce(ctx context.Context, ifModSince string, firstRun bool)
 			}
 			resp.Body.Close()
 			resp = nil
-			nxtreq, err := http.NewRequestWithContext(ctx, http.MethodGet, next, nil)
+			pageCtx, pageCancel := context.WithTimeout(ctx, requestTimeout)
+			nxtreq, err := http.NewRequestWithContext(pageCtx, http.MethodGet, next, nil)
 			if err != nil {
+				pageCancel()
 				p.log.Warn("page: couldnt build request", "err", err)
 				break
 			}
@@ -182,9 +188,12 @@ func (p *Poller) pollOnce(ctx context.Context, ifModSince string, firstRun bool)
 
 			resp, err = p.http.Do(nxtreq)
 			if err != nil {
+				pageCancel()
 				p.log.Warn("page: request failed", "err", err)
 				break
 			}
+			
+			defer pageCancel()
 			if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
 				ra := parseRetryAfter(resp.Header.Get("Retry-After"))
 				resp.Body.Close()
