@@ -120,8 +120,13 @@ func (p *Poller) Run(ctx context.Context) error {
 	}
 }
 
+// ErrUnauthorized is returned from Run when GitHub rejects the stored token.
+// Callers should treat this as a terminal, non-retryable condition: the daemon
+// cannot make progress until the user re-authenticates.
+var ErrUnauthorized = errors.New("unauthorized")
+
 var (
-	errUnauthorized = errors.New("unauthorized")
+	errUnauthorized = ErrUnauthorized
 	errRateLimited  = errors.New("rate limited")
 )
 

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -63,6 +64,13 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	log.Info("ghlistend starting")
 	if err := p.Run(ctx); err != nil && err != context.Canceled {
+		// A bad/expired token is terminal: exit cleanly so systemd's
+		// Restart=on-failure does not loop us into a re-auth toast storm.
+		// The poller has already notified the user to run `ghlistend login`.
+		if errors.Is(err, poller.ErrUnauthorized) {
+			log.Info("ghlistend stopped; awaiting re-authentication")
+			return nil
+		}
 		return err
 	}
 	log.Info("ghlistend stopped")
